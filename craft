@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""craft — a thin, token-frugal CLI over the Craft Docs REST API.
+
+The default way any shell session (Claude Code, scripts) reads or mutates Craft.
+Self-contained: uses this dir's `craftapi` client (auth, browser-UA, op/.env creds)
+so the secret base_url never lands on a command line. Compact output; --json for raw.
+
+    craft ls [--location unsorted|trash|templates|daily_notes] [--folder ID]
+    craft get <docId>                      # rendered markdown
+    craft search <term>                    # matches: docId | snippet
+    craft new "<title>" [--folder ID] [--stdin]   # --stdin = body markdown from stdin
+    craft edit <blockId> "<markdown>"      # edit a block in place
+    craft rm <docId> [<docId> ...]         # soft-delete to trash (batches <=40), verifies
+    craft tasks <YYYY-MM-DD> "<text>" ...  # append checkbox tasks to a daily note
+
+A Craft MCP covers Claude desktop/mobile (same space); this CLI is the Claude Code path.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.parse
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import craftapi as api  # noqa: E402
+
+
+def _blocks_to_md(node, depth: int = 0, out: list[str] | None = None) -> list[str]:
+    """Flatten a /blocks content tree to indented markdown lines."""
+    if out is None:
+        out = []
+    if isinstance(node, list):
+        for c in node:
+            _blocks_to_md(c, depth, out)
+        return out
+    if isinstance(node, dict):
+        md = node.get("markdown") or ""
+        if md and depth > 0:
+            out.append("  " * (depth - 1) + md)
+        for key in ("content", "children", "blocks"):
+            if node.get(key):
+                _blocks_to_md(node[key], depth + 1, out)
+    return out
+
+
+def cmd_ls(args, base, cred):
+    q = ["fetchMetadata=true"]
+    if args.location:
+        q.append(f"location={args.location}")
+    if args.folder:
+        q.append(f"folderId={args.folder}")
+    data = api.req("GET", f"{base}/documents?" + "&".join(q), cred)
+    items = data.get("items", [])
+    if args.json:
+        print(json.dumps(items, indent=2)); return
+    for x in items:
+        print(f"{x['id']}  {x.get('title','(untitled)')}")
+    print(f"\n{len(items)} document(s)", file=sys.stderr)
+
+
+def cmd_get(args, base, cred):
+    data = api.req("GET", f"{base}/blocks?id={args.doc_id}&maxDepth=20", cred)
+    if args.json:
+        print(json.dumps(data, indent=2)); return
+    title = data.get("markdown") or ""
+    if title:
+        print(f"# {title}\n")
+    # content items sit one level below the page root, so render them at depth 1.
+    print("\n".join(_blocks_to_md(data.get("content", []), depth=1)))
+
+
+def cmd_search(args, base, cred):
+    data = api.req("GET", f"{base}/documents/search?include=" + urllib.parse.quote(args.term), cred)
+    items = data.get("items", [])
+    if args.json:
+        print(json.dumps(items, indent=2)); return
+    for m in items:
+        snippet = (m.get("markdown") or "").replace("\n", " ")[:100]
+        print(f"{m.get('documentId','?')}  {snippet}")
+    print(f"\n{len(items)} match(es)", file=sys.stderr)
+
+
+def cmd_new(args, base, cred):
+    body = {"documents": [{"title": args.title}]}
+    if args.folder:
+        body["destination"] = {"folderId": args.folder}
+    created = api.req("POST", f"{base}/documents", cred, json_body=body)
+    doc = created["items"][0]
+    doc_id = doc["id"]
+    print(doc_id)
+    if args.stdin:
+        md = sys.stdin.read().rstrip("\n")
+        if md:
+            blocks = [{"type": "text", "markdown": line} for line in md.split("\n") if line.strip()]
+            for i in range(0, len(blocks), 20):  # /blocks caps at 20 per call
+                api.req("POST", f"{base}/blocks", cred,
+                        json_body={"blocks": blocks[i:i + 20],
+                                   "position": {"parentId": doc_id, "position": "end"}})
+    print(f"created {doc.get('clickableLink','')}", file=sys.stderr)
+
+
+def cmd_edit(args, base, cred):
+    api.update_block(base, cred, args.block_id, args.markdown)
+    print(f"edited {args.block_id}", file=sys.stderr)
+
+
+def cmd_rm(args, base, cred):
+    ids = args.doc_ids
+    for i in range(0, len(ids), 40):  # DELETE caps ~40; larger 500s
+        api.req("DELETE", f"{base}/documents", cred, json_body={"documentIds": ids[i:i + 40]})
+        if i + 40 < len(ids):
+            time.sleep(0.75)  # rate limit ~100/min
+    # Verify via trash — the main list is cached and lies for a beat.
+    trash = {x["id"] for x in api.req("GET", f"{base}/documents?location=trash", cred).get("items", [])}
+    ok = [d for d in ids if d in trash]
+    print(f"trashed {len(ok)}/{len(ids)} (recoverable 30d)", file=sys.stderr)
+    missing = [d for d in ids if d not in trash]
+    if missing:
+        print("NOT confirmed in trash: " + ", ".join(missing), file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_tasks(args, base, cred):
+    print("\n".join(api.append_tasks(base, cred, args.date, args.text)))
+
+
+def main(argv):
+    p = argparse.ArgumentParser(prog="craft", description="Craft Docs REST API CLI")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("ls"); s.add_argument("--location",
+        choices=["unsorted", "trash", "templates", "daily_notes"])
+    s.add_argument("--folder"); s.add_argument("--json", action="store_true"); s.set_defaults(fn=cmd_ls)
+
+    s = sub.add_parser("get"); s.add_argument("doc_id")
+    s.add_argument("--json", action="store_true"); s.set_defaults(fn=cmd_get)
+
+    s = sub.add_parser("search"); s.add_argument("term")
+    s.add_argument("--json", action="store_true"); s.set_defaults(fn=cmd_search)
+
+    s = sub.add_parser("new"); s.add_argument("title"); s.add_argument("--folder")
+    s.add_argument("--stdin", action="store_true"); s.set_defaults(fn=cmd_new)
+
+    s = sub.add_parser("edit"); s.add_argument("block_id"); s.add_argument("markdown")
+    s.set_defaults(fn=cmd_edit)
+
+    s = sub.add_parser("rm"); s.add_argument("doc_ids", nargs="+"); s.set_defaults(fn=cmd_rm)
+
+    s = sub.add_parser("tasks"); s.add_argument("date"); s.add_argument("text", nargs="+")
+    s.set_defaults(fn=cmd_tasks)
+
+    args = p.parse_args(argv[1:])
+    try:
+        base, cred = api.creds()
+        args.fn(args, base, cred)
+    except api.CraftError as e:
+        print(f"craft: {e}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
