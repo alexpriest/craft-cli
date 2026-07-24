@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""kit-notify — send Alex a plain-text iMessage. The ONE place Blooio is touched.
+
+    kit-notify "your message"
+    echo "your message" | kit-notify
+
+Reads the Kit config for the Blooio key + owner phone. When Blooio is retired for
+the in-progress local send approach, swap the body of send() — nothing else changes,
+because kit-watch and the #kit worker both go through this script.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+KIT_CONFIG = Path.home() / ".config" / "kit-imessage" / "config.json"
+
+
+def send(text: str) -> None:
+    cfg = json.loads(KIT_CONFIG.read_text())
+    api_key = cfg["blooio"]["apiKey"]
+    to = cfg["ownerPhone"]
+    req = urllib.request.Request(
+        f"https://backend.blooio.com/v2/api/chats/{urllib.parse.quote(to)}/messages",
+        data=json.dumps({"text": text}).encode(),
+        method="POST",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    )
+    urllib.request.urlopen(req, timeout=30).read()
+
+
+def main(argv) -> int:
+    text = " ".join(argv[1:]).strip() or sys.stdin.read().strip()
+    if not text:
+        print("kit-notify: empty message", file=sys.stderr)
+        return 2
+    send(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

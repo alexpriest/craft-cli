@@ -8,9 +8,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN="$HOME/.local/bin"
 ENV_FILE="$HERE/.env"
 
-echo "==> linking craft into $BIN"
+echo "==> linking craft + kit-notify into $BIN"
 mkdir -p "$BIN"
 ln -sf "$HERE/craft" "$BIN/craft"
+ln -sf "$HERE/kit-notify" "$BIN/kit-notify"   # the #kit worker calls this to text Alex
 
 # Creds: craft reads .env first, then falls back to `op`. Populate .env so normal
 # calls never spawn op (faster, and no stall if 1Password is locked).

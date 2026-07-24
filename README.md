@@ -55,3 +55,37 @@ hard-won API notes live in `../craft-mirror/README.md`.
 
 A Craft **MCP** covers Claude **desktop/mobile** on the same space; `craft` is the
 Claude Code path.
+
+## `#kit` automation — event-driven pickup (kit-watch)
+
+Modeled on the Kit iMessage flow: a cheap poll is the *receiver*, an agent is the *worker*,
+and the LLM only runs on a real event.
+
+- **`kit-watch.py`** — runs on a launchd StartInterval (every 5 min). Zero-token: one Craft
+  search for `#kit` + a diff against `~/.local/state/craft-kit-watch/seen.json`. On a **new**
+  `#kit` block it dispatches a headless Kit worker (`claude -p --permission-mode auto`, run from
+  the Chief-of-Staff folder for the Kit persona). First run seeds silently; if the worker can't
+  run, it falls back to texting via `kit-notify` so nothing is dropped.
+- **The worker decides comms with judgment** — texts Alex (via `kit-notify`) only if the outcome
+  is notable/blocked/time-sensitive/outward; otherwise it handles the item, annotates the Craft
+  block, and removes the `#kit` tag for async review.
+- **`kit-notify`** — the single place Blooio is touched (sends Alex a plain-text iMessage). **Blooio
+  is being retired for a local send approach (in progress); swap the body of `kit-notify`'s
+  `send()` and nothing else changes.**
+
+**Headless MCP availability:** the claude.ai connectors are remote HTTP/SSE servers with cached
+OAuth (see `claude mcp list`), so a headless `claude` reaches them the same as an interactive
+session — Linear, Duckbill, Slack, Granola, Gmail, Google Calendar, Google Drive, Strava, Oura,
+Readwise, Typefully, MyMind — plus all the local stdio servers (Kit Tools, Kit/Alex Email, Resy,
+Monarch, Cronometer, tally) and CLIs (`craft`, `gws`, git). The worker is **not** neutered.
+Genuine exceptions: **claude-in-chrome** (browser automation needs a live Chrome — unavailable in
+cron) and any server showing `! Needs authentication` in `claude mcp list` (currently Attio, Notion,
+beeper — a pre-existing auth state, not headless-specific). If a task needs one of those, the worker
+texts Alex rather than faking it.
+
+**Enable (per machine):**
+```sh
+cp com.alexpriest.kit-watch.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.alexpriest.kit-watch.plist
+```
+Log: `~/Library/Logs/kit-watch.log`.

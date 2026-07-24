@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alexpriest.kit-watch</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/alex/Code/tools/craft-cli/kit-watch.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/alex/Code/tools/craft-cli</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- ~/.local/bin so the worker finds craft / kit-notify / claude / gws -->
+        <key>PATH</key>
+        <string>/Users/alex/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/alex</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/alex/Library/Logs/kit-watch.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/alex/Library/Logs/kit-watch.log</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
