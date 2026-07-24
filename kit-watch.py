@@ -83,9 +83,18 @@ Do the work, then RESPOND INSIDE THE BLOCK. Guidance:
 - PRIMARY output: write your answer/result as children of the tagged block with \
 `craft append {block_id} --stdin` (pipe markdown; it nests inside the block's page, where Alex \
 opens it). This is the default — Alex reviews there, no text needed.
-- FORMATTING: in your appended answer use plain paragraphs with **bold** lead-ins for structure — \
-do NOT use `#`/`##`/`###` headings (they render as big ugly headlines in a daily note). One idea \
-per line/block.
+- FORMATTING: write REAL markdown — `craft append` hands it to Craft whole and Craft parses it into \
+native blocks. A wall of **bold**-lead paragraphs is the failure mode; use structure:
+  • `| a | b |` GFM tables for ANY comparison, price list, spec sheet or option set. This is the \
+single biggest readability win — reach for it the moment you have 2+ things with 2+ attributes. \
+Numbers belong in a table, not in prose.
+  • `<callout>…</callout>` for the ONE finding that matters most. One per answer, not five.
+  • `+ Toggle line` with 2-space-indented children to fold sources, caveats and raw detail out of \
+the way — keeps the answer short without dropping the receipts.
+  • `###` for section breaks. Never `#`/`##` — they render as huge headlines.
+  • `<caption>…</caption>` for provenance/footnotes, `==text==` to highlight a single key number.
+  • `[label](date://YYYY-MM-DD)` for dates, `[label](block://blockId)` to cross-reference a block.
+  • Blank line between paragraphs — a single newline continues the same block.
 - Then remove the #kit tag from the block's own line so it doesn't re-trigger \
 (`craft edit {block_id} "<line>"`). Keep that line's text EXACTLY as Alex wrote it minus the tag — \
 do NOT add a `#` heading prefix or otherwise reformat it (that turns his question into an H1). When \

@@ -11,6 +11,12 @@ so the secret base_url never lands on a command line. Compact output; --json for
     craft new "<title>" [--folder ID] [--stdin]   # --stdin = body markdown from stdin
     craft edit <blockId> "<markdown>"      # edit a block in place
     craft append <blockId> [--stdin]       # write markdown INTO a block's page (nested children)
+
+`new --stdin` and `append` take REAL markdown, handed to Craft whole -- blank line
+between paragraphs, and GFM tables, headings, lists and quotes all become native
+Craft blocks. Craft extensions worth using: `| a | b |` tables, `<callout>...</callout>`,
+`<caption>...</caption>`, `==highlight==` or `<highlight color="red">`, `+ toggle` with
+2-space-indented children, `[text](date://YYYY-MM-DD)`, `[text](block://blockId)`.
     craft rm <docId> [<docId> ...]         # soft-delete to trash (batches <=40), verifies
     craft tasks <YYYY-MM-DD> "<text>" ...  # append checkbox tasks to a daily note
     craft tag <blockId> <name> ...         # append #tags to a block (Craft renders them as live tags)
@@ -31,6 +37,32 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import craftapi as api  # noqa: E402
 
 
+def _table_to_md(rows) -> str:
+    """Render a table block's cell grid as a GFM table (first row = header)."""
+    grid = [[str(c.get("value", "")).replace("|", "\\|") for c in r] for r in rows if r]
+    if not grid:
+        return ""
+    width = max(len(r) for r in grid)
+    grid = [r + [""] * (width - len(r)) for r in grid]
+    lines = ["| " + " | ".join(grid[0]) + " |",
+             "|" + "---|" * width]
+    lines += ["| " + " | ".join(r) + " |" for r in grid[1:]]
+    return "\n".join(lines)
+
+
+def _write_markdown(base, cred, page_id: str, md: str) -> int:
+    """Insert markdown under page_id, letting Craft parse it into real blocks.
+
+    Craft's markdown ingest builds native tables, callouts, headings, toggles and
+    nesting -- so pass the document through whole. (Splitting it into one text
+    block per line, as this used to, flattened everything into plain paragraphs
+    and shredded tables into loose rows.) This path also has no 20-block cap.
+    """
+    r = api.req("POST", f"{base}/blocks", cred,
+                json_body={"markdown": md, "position": {"pageId": page_id, "position": "end"}})
+    return len(r.get("items", []))
+
+
 def _blocks_to_md(node, depth: int = 0, out: list[str] | None = None) -> list[str]:
     """Flatten a /blocks content tree to indented markdown lines."""
     if out is None:
@@ -40,9 +72,15 @@ def _blocks_to_md(node, depth: int = 0, out: list[str] | None = None) -> list[st
             _blocks_to_md(c, depth, out)
         return out
     if isinstance(node, dict):
-        md = node.get("markdown") or ""
+        # Table blocks carry a `rows` grid and no `markdown` -- render it, or they
+        # vanish from every read path (get, mirror, search context).
+        if node.get("type") == "table" and node.get("rows"):
+            md = _table_to_md(node["rows"])
+        else:
+            md = node.get("markdown") or ""
         if md and depth > 0:
-            out.append("  " * (depth - 1) + md)
+            indent = "  " * (depth - 1)
+            out.append("\n".join(indent + ln for ln in md.split("\n")))
         for key in ("content", "children", "blocks"):
             if node.get(key):
                 _blocks_to_md(node[key], depth + 1, out)
@@ -96,27 +134,18 @@ def cmd_new(args, base, cred):
     print(doc_id)
     if args.stdin:
         md = sys.stdin.read().rstrip("\n")
-        if md:
-            blocks = [{"type": "text", "markdown": line} for line in md.split("\n") if line.strip()]
-            for i in range(0, len(blocks), 20):  # /blocks caps at 20 per call
-                api.req("POST", f"{base}/blocks", cred,
-                        json_body={"blocks": blocks[i:i + 20],
-                                   "position": {"pageId": doc_id, "position": "end"}})
+        if md.strip():
+            _write_markdown(base, cred, doc_id, md)
     print(f"created {doc.get('clickableLink','')}", file=sys.stderr)
 
 
 def cmd_append(args, base, cred):
     """Insert markdown as children INTO a block's page (block auto-converts to a page)."""
-    md = sys.stdin.read() if args.stdin else args.markdown
-    md = md.rstrip("\n")
-    blocks = [{"type": "text", "markdown": line} for line in md.split("\n") if line.strip()]
-    if not blocks:
+    md = (sys.stdin.read() if args.stdin else args.markdown).rstrip("\n")
+    if not md.strip():
         return
-    for i in range(0, len(blocks), 20):  # /blocks caps at 20 per call
-        api.req("POST", f"{base}/blocks", cred,
-                json_body={"blocks": blocks[i:i + 20],
-                           "position": {"pageId": args.block_id, "position": "end"}})
-    print(f"appended {len(blocks)} block(s) into {args.block_id}", file=sys.stderr)
+    n = _write_markdown(base, cred, args.block_id, md)
+    print(f"appended {n} block(s) into {args.block_id}", file=sys.stderr)
 
 
 def cmd_edit(args, base, cred):

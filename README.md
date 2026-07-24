@@ -25,13 +25,44 @@ Symlinks `craft` onto PATH and writes `.env` from 1Password. `.env` is gitignore
 craft ls [--location unsorted|trash|templates|daily_notes] [--folder ID]   # id + title
 craft get <docId>                        # rendered markdown
 craft search <term>                      # docId | snippet
-craft new "<title>" [--folder ID] [--stdin]   # --stdin: body markdown, one block per line
+craft new "<title>" [--folder ID] [--stdin]   # --stdin: body markdown from stdin
 craft edit <blockId> "<markdown>"        # edit a block in place
 craft append <blockId> [--stdin]         # write markdown INTO a block's page (nested children)
 craft rm <docId>...                      # soft-delete to trash (batches ≤40, verifies)
 craft tasks <YYYY-MM-DD> "<text>"...     # append checkbox tasks to a daily note
 craft tag <blockId> <name>...            # append #tags to a block (idempotent)
 ```
+
+## Formatting — write real markdown
+
+`new --stdin` and `append` POST the markdown **whole** to `/blocks` and let Craft parse it into
+native blocks. (Until 2026-07-24 they split input into one plain text block per line, which
+flattened every answer into a wall of bold-lead paragraphs and shredded tables into loose rows.
+That's why long agent write-ups looked so bad.) Two consequences: a single newline now *continues*
+a block — put a blank line between paragraphs — and this path has **no 20-block cap** (40+ blocks
+in one call verified).
+
+What Craft's ingest understands, all verified 2026-07-24:
+
+| Syntax | Becomes |
+|---|---|
+| `\| a \| b \|` GFM table | native `type: "table"` block with a real cell grid |
+| `<callout>…</callout>` | text block with `decorations: ["callout"]` |
+| `<caption>…</caption>` | `textStyle: "caption"` (small, muted) |
+| `==text==` / `<highlight color="red">` | inline highlight (yellow, green, mint, cyan, blue, purple, pink, red, gray, gradient-\*) |
+| `+ line` + 2-space-indented children | collapsible toggle (`listStyle: "toggle"`) |
+| `#` / `##` / `###` | `textStyle` h1/h2/h3 — **use `###`**, h1/h2 render as huge headlines |
+| `-` / `1.` / `>` | bullet, numbered, `decorations: ["quote"]` |
+| 2 leading spaces | one nesting level |
+| `[t](date://YYYY-MM-DD)` / `[t](block://id)` | daily-note link / block cross-reference |
+| `<page><pageTitle>T</pageTitle><content>…</content></page>` | nested page; `<card>` = card style |
+
+Reach for a table whenever there are 2+ things with 2+ attributes — it is the single biggest
+readability win over prose. Full token reference: the `info.description` of `$BASE/openapi.json`.
+
+⚠️ **Table blocks have no `markdown` field on read** — the content comes back as a `rows` cell
+grid. Any reader that only looks at `markdown` drops tables silently; `_table_to_md` in the CLI
+re-renders them as GFM.
 
 **Tags:** the API has no tag primitive, but Craft's app renders a literal `#name` in block
 markdown as a live, tappable tag (verified 2026-07-24 — `#macbook`, `#MacBook`, `#macbook-pro`
