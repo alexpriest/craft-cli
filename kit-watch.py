@@ -83,9 +83,14 @@ Do the work, then RESPOND INSIDE THE BLOCK. Guidance:
 - PRIMARY output: write your answer/result as children of the tagged block with \
 `craft append {block_id} --stdin` (pipe markdown; it nests inside the block's page, where Alex \
 opens it). This is the default — Alex reviews there, no text needed.
+- FORMATTING: in your appended answer use plain paragraphs with **bold** lead-ins for structure — \
+do NOT use `#`/`##`/`###` headings (they render as big ugly headlines in a daily note). One idea \
+per line/block.
 - Then remove the #kit tag from the block's own line so it doesn't re-trigger \
-(`craft edit {block_id} "<line without #kit>"`). When your appended answer must *mention* the tag, \
-wrap it in backticks (`#kit`) — a bare one re-triggers this watcher and loops.
+(`craft edit {block_id} "<line>"`). Keep that line's text EXACTLY as Alex wrote it minus the tag — \
+do NOT add a `#` heading prefix or otherwise reformat it (that turns his question into an H1). When \
+your appended answer must *mention* the tag, wrap it in backticks (`#kit`) — a bare one re-triggers \
+this watcher and loops.
 - Be PROPORTIONATE: match effort to the task. A quick question gets a quick answer — don't spin up \
 calendar + web research for something simple. Reach for tools only when the task actually needs them.
 - Tools: `craft` (Craft), `gws` (Gmail/Calendar/Drive/Sheets/Docs), git, plus MCPs (Linear, Gmail, \
