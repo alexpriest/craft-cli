@@ -12,6 +12,7 @@ so the secret base_url never lands on a command line. Compact output; --json for
     craft edit <blockId> "<markdown>"      # edit a block in place
     craft rm <docId> [<docId> ...]         # soft-delete to trash (batches <=40), verifies
     craft tasks <YYYY-MM-DD> "<text>" ...  # append checkbox tasks to a daily note
+    craft tag <blockId> <name> ...         # append #tags to a block (Craft renders them as live tags)
 
 A Craft MCP covers Claude desktop/mobile (same space); this CLI is the Claude Code path.
 """
@@ -99,7 +100,7 @@ def cmd_new(args, base, cred):
             for i in range(0, len(blocks), 20):  # /blocks caps at 20 per call
                 api.req("POST", f"{base}/blocks", cred,
                         json_body={"blocks": blocks[i:i + 20],
-                                   "position": {"parentId": doc_id, "position": "end"}})
+                                   "position": {"pageId": doc_id, "position": "end"}})
     print(f"created {doc.get('clickableLink','')}", file=sys.stderr)
 
 
@@ -128,6 +129,22 @@ def cmd_tasks(args, base, cred):
     print("\n".join(api.append_tasks(base, cred, args.date, args.text)))
 
 
+def cmd_tag(args, base, cred):
+    """Append #tags to a block's text — Craft renders literal #name as a live tag."""
+    node = api.req("GET", f"{base}/blocks?id={args.block_id}&maxDepth=1", cred)
+    md = node.get("markdown") or ""
+    added = []
+    for name in args.tags:
+        name = name.lstrip("#")
+        if f"#{name}" not in md:
+            md = f"{md} #{name}"
+            added.append(name)
+    if added:
+        api.update_block(base, cred, args.block_id, md)
+    print(f"tagged {args.block_id} with {', '.join('#' + a for a in added) or '(already tagged)'}",
+          file=sys.stderr)
+
+
 def main(argv):
     p = argparse.ArgumentParser(prog="craft", description="Craft Docs REST API CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -152,6 +169,9 @@ def main(argv):
 
     s = sub.add_parser("tasks"); s.add_argument("date"); s.add_argument("text", nargs="+")
     s.set_defaults(fn=cmd_tasks)
+
+    s = sub.add_parser("tag"); s.add_argument("block_id"); s.add_argument("tags", nargs="+")
+    s.set_defaults(fn=cmd_tag)
 
     args = p.parse_args(argv[1:])
     try:

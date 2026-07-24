@@ -29,7 +29,14 @@ craft new "<title>" [--folder ID] [--stdin]   # --stdin: body markdown, one bloc
 craft edit <blockId> "<markdown>"        # edit a block in place
 craft rm <docId>...                      # soft-delete to trash (batches ≤40, verifies)
 craft tasks <YYYY-MM-DD> "<text>"...     # append checkbox tasks to a daily note
+craft tag <blockId> <name>...            # append #tags to a block (idempotent)
 ```
+
+**Tags:** the API has no tag primitive, but Craft's app renders a literal `#name` in block
+markdown as a live, tappable tag (verified 2026-07-24 — `#macbook`, `#MacBook`, `#macbook-pro`
+all work; `tag://`, `##name`, `#[name]`, `<tag>` do NOT). `craft tag` just appends `#name` text.
+Use it to group cross-cutting items (e.g. `#macbook` on machine-specific tasks) — tapping the tag
+in Craft collects them in one place.
 
 ## Creds & security
 
