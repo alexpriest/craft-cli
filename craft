@@ -10,6 +10,7 @@ so the secret base_url never lands on a command line. Compact output; --json for
     craft search <term>                    # matches: docId | snippet
     craft new "<title>" [--folder ID] [--stdin]   # --stdin = body markdown from stdin
     craft edit <blockId> "<markdown>"      # edit a block in place
+    craft append <blockId> [--stdin]       # write markdown INTO a block's page (nested children)
     craft rm <docId> [<docId> ...]         # soft-delete to trash (batches <=40), verifies
     craft tasks <YYYY-MM-DD> "<text>" ...  # append checkbox tasks to a daily note
     craft tag <blockId> <name> ...         # append #tags to a block (Craft renders them as live tags)
@@ -104,6 +105,20 @@ def cmd_new(args, base, cred):
     print(f"created {doc.get('clickableLink','')}", file=sys.stderr)
 
 
+def cmd_append(args, base, cred):
+    """Insert markdown as children INTO a block's page (block auto-converts to a page)."""
+    md = sys.stdin.read() if args.stdin else args.markdown
+    md = md.rstrip("\n")
+    blocks = [{"type": "text", "markdown": line} for line in md.split("\n") if line.strip()]
+    if not blocks:
+        return
+    for i in range(0, len(blocks), 20):  # /blocks caps at 20 per call
+        api.req("POST", f"{base}/blocks", cred,
+                json_body={"blocks": blocks[i:i + 20],
+                           "position": {"pageId": args.block_id, "position": "end"}})
+    print(f"appended {len(blocks)} block(s) into {args.block_id}", file=sys.stderr)
+
+
 def cmd_edit(args, base, cred):
     api.update_block(base, cred, args.block_id, args.markdown)
     print(f"edited {args.block_id}", file=sys.stderr)
@@ -164,6 +179,10 @@ def main(argv):
 
     s = sub.add_parser("edit"); s.add_argument("block_id"); s.add_argument("markdown")
     s.set_defaults(fn=cmd_edit)
+
+    s = sub.add_parser("append"); s.add_argument("block_id")
+    s.add_argument("markdown", nargs="?", default=""); s.add_argument("--stdin", action="store_true")
+    s.set_defaults(fn=cmd_append)
 
     s = sub.add_parser("rm"); s.add_argument("doc_ids", nargs="+"); s.set_defaults(fn=cmd_rm)
 

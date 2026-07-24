@@ -79,32 +79,41 @@ The tagged block (id `{block_id}`):
 {text}
 \"\"\"
 
-Do the work. Guidance:
-- Prefer CLIs — `craft` (Craft read/write), `gws` (Gmail/Calendar/Drive/Sheets/Docs), git. \
-Some MCPs are ABSENT in this headless context: Linear, Duckbill, Slack, Granola, browser \
-(claude-in-chrome). If the task needs one of those, do NOT fake it — text Alex to handle it.
-- Safe/reversible actions: just do them. Outward or irreversible actions (emailing third \
-parties, bookings, purchases, deletions): do them ONLY if this #kit item explicitly authorizes \
-it; otherwise prepare and text Alex to confirm. You are unattended — no live human to check with.
-- COMMS (decide with judgment): text Alex via `kit-notify "<plain text>"` ONLY if the outcome is \
-notable, blocked, time-sensitive, needs his input, or you took an outward/irreversible action. \
-Otherwise stay quiet and record it in Craft: mark the #kit block done and/or append a short note \
-of what you did (use `craft edit {block_id} "<updated markdown>"`), so he can review async. \
-Remove the #kit tag from the block once handled so it doesn't re-trigger. When anything you write \
-back into Craft needs to *mention* the tag, wrap it in backticks (`#kit`) — a bare one in your own \
-note re-triggers this watcher on the next poll and loops.
-- Keep any text plain (no markdown). Be concise. End by stating what you did and how you reported it."""
+Do the work, then RESPOND INSIDE THE BLOCK. Guidance:
+- PRIMARY output: write your answer/result as children of the tagged block with \
+`craft append {block_id} --stdin` (pipe markdown; it nests inside the block's page, where Alex \
+opens it). This is the default — Alex reviews there, no text needed.
+- Then remove the #kit tag from the block's own line so it doesn't re-trigger \
+(`craft edit {block_id} "<line without #kit>"`). When your appended answer must *mention* the tag, \
+wrap it in backticks (`#kit`) — a bare one re-triggers this watcher and loops.
+- Be PROPORTIONATE: match effort to the task. A quick question gets a quick answer — don't spin up \
+calendar + web research for something simple. Reach for tools only when the task actually needs them.
+- Tools: `craft` (Craft), `gws` (Gmail/Calendar/Drive/Sheets/Docs), git, plus MCPs (Linear, Gmail, \
+Calendar, Slack, Granola, Duckbill, etc. — most work headless). Browser automation (claude-in-chrome) \
+and any server needing interactive auth are unavailable; if the task truly needs one, say so in your \
+in-block response.
+- Safe/reversible actions: just do them. Outward/irreversible actions (emailing third parties, \
+bookings, purchases, deletions): only if this item explicitly authorizes it; otherwise write what \
+you'd do into the block and text Alex to confirm. You are unattended — no live human to check with.
+- Text Alex via `kit-notify "<plain text>"` ONLY if blocked, time-sensitive, needs a decision, or \
+you took an outward/irreversible action — otherwise stay in-block. Keep any text plain, no markdown."""
 
 
 def dispatch(block_id: str, text: str) -> bool:
-    """Fire the headless Kit worker. Returns True on clean exit."""
+    """Fire the headless Kit worker DETACHED and return immediately.
+
+    Non-blocking so the poll never stalls and multiple #kit items run in parallel.
+    start_new_session detaches it from kit-watch's process group; output goes to a
+    worker log for debugging. Returns True if the process launched.
+    """
     try:
-        r = subprocess.run(
+        log = open(os.path.join(HERE, "worker.log"), "a")
+        subprocess.Popen(
             ["claude", "-p", worker_prompt(block_id, text), "--permission-mode", "auto"],
-            cwd=KIT_CWD, capture_output=True, text=True, timeout=AGENT_TIMEOUT,
+            cwd=KIT_CWD, stdout=log, stderr=log, start_new_session=True,
         )
-        return r.returncode == 0
-    except (subprocess.TimeoutExpired, OSError):
+        return True
+    except OSError:
         return False
 
 

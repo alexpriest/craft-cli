@@ -27,6 +27,7 @@ craft get <docId>                        # rendered markdown
 craft search <term>                      # docId | snippet
 craft new "<title>" [--folder ID] [--stdin]   # --stdin: body markdown, one block per line
 craft edit <blockId> "<markdown>"        # edit a block in place
+craft append <blockId> [--stdin]         # write markdown INTO a block's page (nested children)
 craft rm <docId>...                      # soft-delete to trash (batches ≤40, verifies)
 craft tasks <YYYY-MM-DD> "<text>"...     # append checkbox tasks to a daily note
 craft tag <blockId> <name>...            # append #tags to a block (idempotent)
@@ -62,13 +63,16 @@ Modeled on the Kit iMessage flow: a cheap poll is the *receiver*, an agent is th
 and the LLM only runs on a real event.
 
 - **`kit-watch.py`** — runs on a launchd StartInterval (every 5 min). Zero-token: one Craft
-  search for `#kit` + a diff against `~/.local/state/craft-kit-watch/seen.json`. On a **new**
-  `#kit` block it dispatches a headless Kit worker (`claude -p --permission-mode auto`, run from
-  the Chief-of-Staff folder for the Kit persona). First run seeds silently; if the worker can't
-  run, it falls back to texting via `kit-notify` so nothing is dropped.
-- **The worker decides comms with judgment** — texts Alex (via `kit-notify`) only if the outcome
-  is notable/blocked/time-sensitive/outward; otherwise it handles the item, annotates the Craft
-  block, and removes the `#kit` tag for async review.
+  search for `#kit` + a diff against `~/.local/state/craft-kit-watch/seen.json`. Candidate blocks
+  are re-fetched for their real markdown (search snippets strip backticks, so a note that merely
+  *mentions* `` `#kit` `` doesn't false-trigger). On a **new** live-tagged `#kit` block it
+  dispatches a headless Kit worker (`claude -p --permission-mode auto`, from the Chief-of-Staff
+  folder for the Kit persona), **detached** — the poll returns immediately and items run in
+  parallel. First run seeds silently.
+- **The worker responds inside the block** — writes its answer as nested children of the tagged
+  block via `craft append` (Alex opens the block to read it), removes the `#kit` tag, and stays
+  quiet. It texts via `kit-notify` only when blocked, time-sensitive, needs a decision, or it took
+  an outward/irreversible action.
 - **`kit-notify`** — the single place Blooio is touched (sends Alex a plain-text iMessage). **Blooio
   is being retired for a local send approach (in progress); swap the body of `kit-notify`'s
   `send()` and nothing else changes.**
