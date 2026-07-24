@@ -34,19 +34,39 @@ KIT_NOTIFY = os.path.join(HERE, "kit-notify")
 KIT_CWD = str(Path.home() / "Obsidian" / "alexpriest" / "Claude" / "Chief of Staff")
 # #kit as a whole tag: not followed by a word char or hyphen (so #kitchen / #kit-x don't match).
 KIT_RE = re.compile(r"#kit(?![\w-])", re.IGNORECASE)
+# Inline-code spans (`...`) are references, not live tags — strip them before matching so a
+# doc that merely *mentions* `#kit` (e.g. a conventions note) never triggers the worker.
+CODE_SPAN_RE = re.compile(r"`[^`]*`")
+
+
+def _has_kit_tag(md: str) -> bool:
+    return bool(KIT_RE.search(CODE_SPAN_RE.sub("", md)))
 AGENT_TIMEOUT = 900  # seconds per item
 
 
+def _block_markdown(base: str, cred: str, block_id: str) -> str:
+    """Authoritative markdown for one block."""
+    try:
+        r = api.req("GET", f"{base}/blocks?id={block_id}&maxDepth=1", cred)
+    except api.CraftError:
+        return ""
+    return (r.get("markdown") or "").strip()
+
+
 def find_kit_blocks(base: str, cred: str) -> dict[str, str]:
-    """{blockId: full-markdown} for every block carrying the #kit tag."""
+    """{blockId: full-markdown} for every block carrying a live #kit tag.
+
+    Search only nominates candidates: its snippets are truncated, lowercased, and
+    render inline code as **bold**, so `#kit` in a reference note looks identical to
+    a live tag there. Re-fetch each block for the real markdown before matching.
+    """
     r = api.req("GET", f"{base}/documents/search?include=" + urllib.parse.quote("#kit"), cred)
     out = {}
     for m in r.get("items", []):
-        md = (m.get("markdown") or "").strip()
-        if not KIT_RE.search(md):
-            continue
         for bid in m.get("blockIds", []):
-            out[bid] = md
+            md = _block_markdown(base, cred, bid)
+            if md and _has_kit_tag(md):
+                out[bid] = md
     return out
 
 
