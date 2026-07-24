@@ -90,7 +90,9 @@ it; otherwise prepare and text Alex to confirm. You are unattended — no live h
 notable, blocked, time-sensitive, needs his input, or you took an outward/irreversible action. \
 Otherwise stay quiet and record it in Craft: mark the #kit block done and/or append a short note \
 of what you did (use `craft edit {block_id} "<updated markdown>"`), so he can review async. \
-Remove the #kit tag from the block once handled so it doesn't re-trigger.
+Remove the #kit tag from the block once handled so it doesn't re-trigger. When anything you write \
+back into Craft needs to *mention* the tag, wrap it in backticks (`#kit`) — a bare one in your own \
+note re-triggers this watcher on the next poll and loops.
 - Keep any text plain (no markdown). Be concise. End by stating what you did and how you reported it."""
 
 
