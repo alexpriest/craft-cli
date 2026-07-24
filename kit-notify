@@ -18,6 +18,9 @@ import urllib.request
 from pathlib import Path
 
 KIT_CONFIG = Path.home() / ".config" / "kit-imessage" / "config.json"
+# Blooio sits behind Cloudflare, which 403s (error 1010) on urllib's default User-Agent.
+_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 
 def send(text: str) -> None:
@@ -28,7 +31,8 @@ def send(text: str) -> None:
         f"https://backend.blooio.com/v2/api/chats/{urllib.parse.quote(to)}/messages",
         data=json.dumps({"text": text}).encode(),
         method="POST",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
+                 "User-Agent": _UA},
     )
     urllib.request.urlopen(req, timeout=30).read()
 
