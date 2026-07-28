@@ -83,6 +83,13 @@ Do the work, then RESPOND INSIDE THE BLOCK. Guidance:
 - PRIMARY output: write your answer/result as children of the tagged block with \
 `craft append {block_id} --stdin` (pipe markdown; it nests inside the block's page, where Alex \
 opens it). This is the default — Alex reviews there, no text needed.
+- ⚠ IF THE TAGGED BLOCK CONTAINS SEVERAL DISTINCT ASKS as its own child blocks (a "few things I'd \
+love help on" list, a checklist, etc.), do NOT dump everything onto the parent. `craft get <docId> \
+--json` to find each child's block id, then `craft append <thatChildId>` so each answer nests under \
+the ask it answers. Appending it all to the parent is technically "inside the tagged block" and \
+still WRONG: the answers pile up after his list instead of beneath the item each one addresses, and \
+he cannot tell which answer belongs to which ask. Observed 2026-07-28 on the Halide note — 45 blocks \
+landed in one heap under a 4-item list. Answer the parent directly only when it is a single ask.
 - FORMATTING: write REAL markdown — `craft append` hands it to Craft whole and Craft parses it into \
 native blocks. A wall of **bold**-lead paragraphs is the failure mode; use structure:
   • `| a | b |` GFM tables for ANY comparison, price list, spec sheet or option set. This is the \
