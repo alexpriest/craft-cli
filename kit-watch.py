@@ -95,10 +95,14 @@ the way — keeps the answer short without dropping the receipts.
   • `<caption>…</caption>` for provenance/footnotes, `==text==` to highlight a single key number.
   • `[label](date://YYYY-MM-DD)` for dates, `[label](block://blockId)` to cross-reference a block.
   • Blank line between paragraphs — a single newline continues the same block.
-- Then remove the #kit tag from the block's own line so it doesn't re-trigger \
-(`craft edit {block_id} "<line>"`). Keep that line's text EXACTLY as Alex wrote it minus the tag — \
+- Then SWAP the tag: remove #kit and put `#review` in its place, on the block's own line \
+(`craft edit {block_id} "<line> #review"`). Removing #kit stops it re-triggering; adding #review is \
+how Alex FINDS the finished work — previously a completed item just lost its tag and became \
+invisible, so he had no way to know you'd answered. Every item you finish gets #review, without \
+exception, including ones you only acknowledged or judged to need no action. He clears the tag \
+himself once he has read it. Keep the line's text EXACTLY as Alex wrote it apart from that tag swap — \
 do NOT add a `#` heading prefix or otherwise reformat it (that turns his question into an H1). When \
-your appended answer must *mention* the tag, wrap it in backticks (`#kit`) — a bare one re-triggers \
+your appended answer must *mention* either tag, wrap it in backticks (`#kit`) — a bare one re-triggers \
 this watcher and loops.
 - Be PROPORTIONATE: match effort to the task. A quick question gets a quick answer — don't spin up \
 calendar + web research for something simple. Reach for tools only when the task actually needs them.

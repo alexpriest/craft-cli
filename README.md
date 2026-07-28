@@ -101,9 +101,16 @@ and the LLM only runs on a real event.
   folder for the Kit persona), **detached** — the poll returns immediately and items run in
   parallel. First run seeds silently.
 - **The worker responds inside the block** — writes its answer as nested children of the tagged
-  block via `craft append` (Alex opens the block to read it), removes the `#kit` tag, and stays
-  quiet. It texts via `kit-notify` only when blocked, time-sensitive, needs a decision, or it took
-  an outward/irreversible action.
+  block via `craft append` (Alex opens the block to read it), **swaps `#kit` for `#review`**, and
+  stays quiet. It texts via `kit-notify` only when blocked, time-sensitive, needs a decision, or it
+  took an outward/irreversible action.
+- **`#review` is the completion signal** (added 2026-07-28). Dropping `#kit` stops the block
+  re-triggering, but on its own it made finished work *invisible*: a completed item looked identical
+  to one nobody had started, and Alex had no way to find what had been answered. `#review` is his
+  inbox of done work — `craft search "#review"`. Every finished item gets it, including ones the
+  worker only acknowledged or judged to need no action. **Alex clears it himself**; the worker never
+  removes it. Safe by construction: `_has_kit_tag()` matches `#kit` as a whole tag only, so `#review`
+  cannot re-trigger the watcher (a bare `#kit` in appended prose still can — backtick it).
 - **`kit-notify`** — the single place Blooio is touched (sends Alex a plain-text iMessage). **Blooio
   is being retired for a local send approach (in progress); swap the body of `kit-notify`'s
   `send()` and nothing else changes.**
