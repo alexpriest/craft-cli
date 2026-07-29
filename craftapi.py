@@ -84,8 +84,46 @@ def req(method: str, path_or_url: str, cred: str, *, json_body=None):
         raise CraftError(f"{method} {url.split('?')[0]} -> {e.code}: {detail}")
 
 
-def append_tasks(base: str, cred: str, date: str, tasks: list[str], *, separator: bool = True) -> list[str]:
-    """Append checkbox tasks to a daily note (auto-creates the note), divider first."""
+def needs_separator(base: str, cred: str, date: str) -> bool:
+    """Should this append lay down a divider?
+
+    ONE divider per note, not one per call (2026-07-29). Look at what the append
+    will actually land against — the last meaningful top-level block:
+
+      * nothing there (empty note, or a 404 because the write will create it):
+        no rule. A divider with nothing above it separates nothing.
+      * already a divider: no rule. That one is the boundary.
+      * already a task: no rule. Continuing an existing agent section — a second
+        rule between two checkbox lists is the noise Alex flagged.
+      * anything else (prose, a toggle, a table): yes. The case the divider is for.
+
+    Deliberately NOT "does the note contain a divider anywhere": Alex separates his
+    own timestamped journal entries with `***`, so that test would suppress the one
+    rule that's genuinely needed on a heavily-journaled day.
+
+    Any non-404 read failure falls back to yes — a stray rule beats a collision.
+    """
+    try:
+        doc = req("GET", f"{base}/blocks?date={date}", cred)
+    except CraftError as e:
+        return "NOT_FOUND_ERROR" not in str(e)
+    for block in reversed(doc.get("content") or []):
+        if not (block.get("markdown") or "").strip():
+            continue  # trailing blank block — Craft leaves these behind
+        if block.get("type") == "line":
+            return False
+        return block.get("listStyle") != "task"
+    return False
+
+
+def append_tasks(base: str, cred: str, date: str, tasks: list[str], *,
+                 separator: bool | None = None) -> list[str]:
+    """Append checkbox tasks to a daily note (auto-creates the note), under one divider.
+
+    separator=None (default) decides via `needs_separator`; True/False force it.
+    """
+    if separator is None:
+        separator = needs_separator(base, cred, date)
     blocks = ([DIVIDER] if separator else []) + [
         {"type": "text", "markdown": t, "listStyle": "task", "indentationLevel": 0} for t in tasks
     ]

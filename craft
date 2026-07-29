@@ -19,6 +19,7 @@ Craft blocks. Craft extensions worth using: `| a | b |` tables, `<callout>...</c
 2-space-indented children, `[text](date://YYYY-MM-DD)`, `[text](block://blockId)`.
     craft rm <docId> [<docId> ...]         # soft-delete to trash (batches <=40), verifies
     craft tasks <YYYY-MM-DD> "<text>" ...  # append checkbox tasks to a daily note
+                          [--divider auto|always|never]   # auto: ONE per note, not one per call
     craft tag <blockId> <name> ...         # append #tags to a block (Craft renders them as live tags)
 
 A Craft MCP covers Claude desktop/mobile (same space); this CLI is the Claude Code path.
@@ -170,7 +171,8 @@ def cmd_rm(args, base, cred):
 
 
 def cmd_tasks(args, base, cred):
-    print("\n".join(api.append_tasks(base, cred, args.date, args.text)))
+    sep = {"auto": None, "always": True, "never": False}[args.divider]
+    print("\n".join(api.append_tasks(base, cred, args.date, args.text, separator=sep)))
 
 
 def cmd_tag(args, base, cred):
@@ -216,6 +218,8 @@ def main(argv):
     s = sub.add_parser("rm"); s.add_argument("doc_ids", nargs="+"); s.set_defaults(fn=cmd_rm)
 
     s = sub.add_parser("tasks"); s.add_argument("date"); s.add_argument("text", nargs="+")
+    s.add_argument("--divider", choices=("auto", "always", "never"), default="auto",
+                   help="auto (default) = one per note, only when there's writing above it")
     s.set_defaults(fn=cmd_tasks)
 
     s = sub.add_parser("tag"); s.add_argument("block_id"); s.add_argument("tags", nargs="+")

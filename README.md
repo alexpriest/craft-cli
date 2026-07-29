@@ -30,8 +30,20 @@ craft edit <blockId> "<markdown>"        # edit a block in place
 craft append <blockId> [--stdin]         # write markdown INTO a block's page (nested children)
 craft rm <docId>...                      # soft-delete to trash (batches ≤40, verifies)
 craft tasks <YYYY-MM-DD> "<text>"...     # append checkbox tasks to a daily note
+      [--divider auto|always|never]      # auto = ONE divider per note (see below)
 craft tag <blockId> <name>...            # append #tags to a block (idempotent)
 ```
+
+## Dividers on daily notes — one per note, not one per append
+
+Agent-written tasks sit under a `---` rule so they don't run into Alex's handwriting. That rule is
+laid down **once per note**. `--divider auto` (the default) GETs the note first and adds one only
+when there's content to separate from *and* no top-level divider yet — an empty note gets none, and
+a note that already has one gets none, because later appends belong under the existing boundary.
+
+Until 2026-07-29 every append added its own, so a day with four appends came out with four `***`
+rules stacked through it. Alex flagged that as noise; this is the fix. `--divider always|never`
+overrides. The same logic lives in `craft_append.py` (craft-mirror) — change both or neither.
 
 ## Formatting — write real markdown
 
