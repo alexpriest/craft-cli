@@ -137,3 +137,132 @@ def append_tasks(base: str, cred: str, date: str, tasks: list[str], *,
 def update_block(base: str, cred: str, block_id: str, markdown: str) -> dict:
     """Edit a block's text in place. PUT /blocks — PATCH 404s."""
     return req("PUT", f"{base}/blocks", cred, json_body={"blocks": [{"id": block_id, "markdown": markdown}]})
+
+
+# --- block deletion -------------------------------------------------------
+#
+# `DELETE /blocks {"blockIds":[...]}` is real and has been all along (it is in
+# the OpenAPI spec and was documented in craft-mirror's README on 2026-07-23).
+# A 2026-07-30 session asserted "Craft has no block DELETE" and worked around it
+# by rewriting a stale block instead; that claim was wrong. Verified live:
+#
+#   * Works on prose, task, and page blocks alike.
+#   * A bad/already-deleted id 404s, and the call is ATOMIC — one bad id in a
+#     batch deletes NOTHING. Passing a documentId 400s ("Root block cannot be
+#     deleted"), so a whole doc can't be lost through this path.
+#   * Deleting a parent PROMOTES its children to the parent's level; it does
+#     not cascade. Nothing is silently destroyed, but nesting is lost.
+#   * ⚠ THERE IS NO TRASH FOR BLOCKS. Unlike DELETE /documents (soft, 30-day
+#     Recently Deleted), a deleted block is gone server-side. The local undo
+#     journal below is the ONLY undo that exists — always capture before deleting.
+
+UNDO_DIR = Path.home() / ".local" / "state" / "craft-cli" / "undo"
+
+
+def doc_blocks(base: str, cred: str, *, doc_id: str | None = None,
+               date: str | None = None) -> list[dict]:
+    """Flat list of a document's (or daily note's) blocks. One of doc_id/date."""
+    if not (doc_id or date):
+        raise CraftError("doc_blocks needs doc_id or date")
+    key = f"id={doc_id}" if doc_id else f"date={date}"
+    return req("GET", f"{base}/blocks?{key}", cred).get("content") or []
+
+
+def capture_blocks(base: str, cred: str, block_ids: list[str], *,
+                   doc_id: str | None = None, date: str | None = None) -> list[dict]:
+    """Snapshot blocks so a delete can be undone. Call BEFORE deleting.
+
+    With doc/date context we also record each block's preceding sibling, which
+    lets `undo` put it back exactly where it was. Without context we can still
+    capture the text (via a per-block GET), but placement is unknown and a
+    restore has to be told which document to land in.
+    """
+    context = doc_blocks(base, cred, doc_id=doc_id, date=date) if (doc_id or date) else []
+    by_id = {b["id"]: i for i, b in enumerate(context)}
+    entries = []
+    for bid in block_ids:
+        if bid in by_id:
+            i = by_id[bid]
+            block = context[i]
+            entries.append({
+                "id": bid,
+                "markdown": block.get("markdown") or "",
+                "type": block.get("type"),
+                "prev_sibling": context[i - 1]["id"] if i > 0 else None,
+                "index": i,
+                "doc_id": doc_id,
+                "date": date,
+            })
+        else:
+            block = req("GET", f"{base}/blocks?id={bid}", cred)
+            entries.append({
+                "id": bid,
+                "markdown": block.get("markdown") or "",
+                "type": block.get("type"),
+                "prev_sibling": None,
+                "doc_id": doc_id,
+                "date": date,
+                "placement_unknown": True,
+            })
+    return entries
+
+
+def write_journal(entries: list[dict], stamp: str) -> Path:
+    """Persist a capture so `craft undo` can restore it. Returns the journal path."""
+    UNDO_DIR.mkdir(parents=True, exist_ok=True)
+    path = UNDO_DIR / f"{stamp}.json"
+    path.write_text(json.dumps(entries, indent=1))
+    return path
+
+
+def delete_blocks(base: str, cred: str, block_ids: list[str]) -> list[str]:
+    """Delete blocks. Atomic per call — any unknown id aborts the whole batch."""
+    deleted = []
+    for i in range(0, len(block_ids), 40):
+        chunk = block_ids[i:i + 40]
+        r = req("DELETE", f"{base}/blocks", cred, json_body={"blockIds": chunk})
+        deleted += [x["id"] for x in r.get("items", [])]
+    return deleted
+
+
+def restore_blocks(base: str, cred: str, entries: list[dict],
+                   to_doc: str | None = None) -> list[str]:
+    """Put journaled blocks back, in original order, at their original spots.
+
+    Restores via the markdown form of POST /blocks: the captured markdown is the
+    RENDERED text ('- [ ] thing' for a task), and re-parsing it reproduces the
+    original block type rather than double-prefixing it.
+
+    Two ordering details that are easy to get wrong:
+      * Restore in ORIGINAL DOCUMENT ORDER, not the order the ids were typed on
+        the command line, or a multi-block undo comes back shuffled.
+      * When two adjacent blocks were deleted together, the second one's anchor
+        is the first one — an id that no longer exists. Remap each anchor to the
+        block's freshly restored id, else the second insert 404s.
+    """
+    ordered = sorted(entries, key=lambda e: e.get("index") if e.get("index") is not None else 1 << 30)
+    remap: dict[str, str] = {}
+    new_ids = []
+    for e in ordered:
+        md = (e.get("markdown") or "").strip()
+        if not md:
+            continue
+        anchor = e.get("prev_sibling")
+        anchor = remap.get(anchor, anchor)
+        if anchor:
+            position = {"position": "after", "siblingId": anchor}
+        else:
+            target = to_doc or e.get("doc_id")
+            if target:
+                position = {"position": "start", "pageId": target}
+            elif e.get("date"):
+                position = {"position": "end", "date": e["date"]}
+            else:
+                raise CraftError(f"nowhere to restore {e['id']} — pass --to <docId>")
+        r = req("POST", f"{base}/blocks", cred, json_body={"markdown": md, "position": position})
+        made = [x["id"] for x in r.get("items", [])]
+        new_ids += made
+        if made:
+            e["_restored_as"] = made[-1]
+            remap[e["id"]] = made[-1]
+    return new_ids

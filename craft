@@ -21,6 +21,17 @@ Craft blocks. Craft extensions worth using: `| a | b |` tables, `<callout>...</c
     craft tasks <YYYY-MM-DD> "<text>" ...  # append checkbox tasks to a daily note
                           [--divider auto|always|never]   # auto: ONE per note, not one per call
     craft tag <blockId> <name> ...         # append #tags to a block (Craft renders them as live tags)
+    craft rm-block <blockId> ...           # delete blocks  [--doc ID | --date D] [--dry-run] [-y]
+    craft undo [<stamp>] [--list] [--to ID]   # put the last rm-block back
+
+Block delete is REAL (`DELETE /blocks`) — an earlier note claiming otherwise was wrong.
+But unlike `craft rm`, which soft-deletes a document to a 30-day trash, a deleted BLOCK
+has no server-side recovery at all. So `rm-block` journals every block to
+~/.local/state/craft-cli/undo/ before deleting, and `craft undo` replays it. Pass
+--doc/--date so the journal records placement and undo restores the exact position;
+without it undo needs `--to <docId>` and lands the block at the top. Indentation is
+NOT recoverable — the API doesn't return it on read, so a restored child comes back
+at top level. Deleting a parent promotes its children rather than deleting them.
 
 A Craft MCP covers Claude desktop/mobile (same space); this CLI is the Claude Code path.
 """
@@ -170,6 +181,65 @@ def cmd_rm(args, base, cred):
         sys.exit(1)
 
 
+def _preview(md, n=64):
+    md = " ".join((md or "").split())
+    return md[:n] + ("…" if len(md) > n else "") or "(empty)"
+
+
+def cmd_rm_block(args, base, cred):
+    """Delete blocks. Journals them first — a deleted block has NO server-side trash."""
+    entries = api.capture_blocks(base, cred, args.block_ids, doc_id=args.doc, date=args.date)
+    for e in entries:
+        flags = []
+        if e.get("type") == "page":
+            flags.append("PAGE — children will be promoted, not deleted")
+        if e.get("placement_unknown"):
+            flags.append("placement unknown; undo needs --to <docId>")
+        suffix = ("  [" + "; ".join(flags) + "]") if flags else ""
+        print(f"  {e['id'][:8]}  {_preview(e['markdown'])}{suffix}", file=sys.stderr)
+
+    if args.dry_run:
+        print(f"dry run — {len(entries)} block(s) would be deleted", file=sys.stderr)
+        return
+    if not args.yes:
+        if not sys.stdin.isatty():
+            print("refusing to delete without -y (block delete is irreversible)", file=sys.stderr)
+            sys.exit(1)
+        if input(f"delete {len(entries)} block(s)? [y/N] ").strip().lower() not in ("y", "yes"):
+            print("aborted", file=sys.stderr)
+            return
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    journal = api.write_journal(entries, stamp)
+    deleted = api.delete_blocks(base, cred, [e["id"] for e in entries])
+    print(f"deleted {len(deleted)}/{len(entries)} block(s) — undo: craft undo {stamp}",
+          file=sys.stderr)
+    if len(deleted) != len(entries):
+        print(f"journal kept at {journal}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_undo(args, base, cred):
+    """Restore the blocks from a delete journal (default: the most recent)."""
+    journals = sorted(api.UNDO_DIR.glob("*.json")) if api.UNDO_DIR.is_dir() else []
+    if args.list or (not journals and not args.stamp):
+        if not journals:
+            print("no delete journals", file=sys.stderr)
+            return
+        for j in journals[-20:]:
+            entries = json.loads(j.read_text())
+            print(f"{j.stem}  {len(entries)} block(s)  {_preview(entries[0]['markdown'], 44)}")
+        return
+    path = (api.UNDO_DIR / f"{args.stamp}.json") if args.stamp else journals[-1]
+    if not path.is_file():
+        print(f"no such journal: {path.stem}", file=sys.stderr)
+        sys.exit(1)
+    entries = json.loads(path.read_text())
+    new_ids = api.restore_blocks(base, cred, entries, to_doc=args.to)
+    print("\n".join(new_ids))
+    print(f"restored {len(new_ids)} block(s) from {path.stem}", file=sys.stderr)
+
+
 def cmd_tasks(args, base, cred):
     sep = {"auto": None, "always": True, "never": False}[args.divider]
     print("\n".join(api.append_tasks(base, cred, args.date, args.text, separator=sep)))
@@ -224,6 +294,19 @@ def main(argv):
 
     s = sub.add_parser("tag"); s.add_argument("block_id"); s.add_argument("tags", nargs="+")
     s.set_defaults(fn=cmd_tag)
+
+    s = sub.add_parser("rm-block"); s.add_argument("block_ids", nargs="+")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--doc", help="containing docId — lets undo restore exact placement")
+    g.add_argument("--date", help="containing daily note (YYYY-MM-DD) — same")
+    s.add_argument("--dry-run", action="store_true"); s.add_argument("-y", "--yes",
+        action="store_true", help="required when not on a TTY")
+    s.set_defaults(fn=cmd_rm_block)
+
+    s = sub.add_parser("undo"); s.add_argument("stamp", nargs="?")
+    s.add_argument("--list", action="store_true"); s.add_argument("--to",
+        help="docId to restore into when placement wasn't captured")
+    s.set_defaults(fn=cmd_undo)
 
     args = p.parse_args(argv[1:])
     try:

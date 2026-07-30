@@ -32,7 +32,44 @@ craft rm <docId>...                      # soft-delete to trash (batches ≤40, 
 craft tasks <YYYY-MM-DD> "<text>"...     # append checkbox tasks to a daily note
       [--divider auto|always|never]      # auto = ONE divider per note (see below)
 craft tag <blockId> <name>...            # append #tags to a block (idempotent)
+craft rm-block <blockId>...               # DELETE blocks  [--doc ID | --date D] [--dry-run] [-y]
+craft undo [<stamp>] [--list] [--to ID]   # restore what the last rm-block removed
 ```
+
+## Deleting blocks — real, but genuinely one-way
+
+`DELETE /blocks {"blockIds":[…]}` has always existed (it is in the OpenAPI spec, and
+craft-mirror's README documented it on 2026-07-23). A 2026-07-30 session nonetheless
+asserted "Craft has no block DELETE" and worked around it by rewriting a stale block
+in place. That was wrong, and it is why clutter accumulated instead of being removed.
+
+Verified live against the API:
+
+| Behaviour | Result |
+|---|---|
+| Delete prose / task / page blocks | all work |
+| Bad or already-deleted id | `404`, and the call is **atomic** — one bad id in a batch deletes **nothing** |
+| Passing a `documentId` as a blockId | `400 Root block cannot be deleted` — a doc can't be lost this way |
+| Deleting a parent | children are **promoted**, not cascaded — nothing is silently destroyed |
+| Recovery | **none.** No trash, no 30-day window (`craft rm` on a *document* does have one) |
+
+That last row is the whole design constraint. `rm-block` therefore snapshots every
+block — text, type, and its preceding sibling — into `~/.local/state/craft-cli/undo/`
+*before* issuing the delete, and `craft undo` replays the snapshot. Guards: a
+non-TTY caller must pass `-y` (so nothing deletes by accident inside a pipeline),
+`--dry-run` prints exactly what would go, and page blocks are flagged in the preview.
+
+Pass `--doc <id>` or `--date <YYYY-MM-DD>` whenever you know it. That is what lets
+the journal record placement, so undo restores each block to its exact original
+position and in original document order (including the fiddly case where two
+adjacent blocks were deleted together and the second one's anchor is the first).
+Without it, undo needs `--to <docId>` and drops the block at the top of the doc.
+
+**Known fidelity limit:** indentation is not recoverable. The API doesn't return
+`indentationLevel` on read, so a restored child block comes back at top level.
+Restores are faithful on text, order, position, and block type (tasks come back as
+tasks — the journal stores rendered markdown like `- [ ] thing` and re-parses it,
+which reproduces the type rather than double-prefixing it).
 
 ## Dividers on daily notes — one per note, not one per append
 
