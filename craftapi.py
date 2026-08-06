@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -27,8 +28,16 @@ _ENV_FILE = Path(__file__).resolve().parent / ".env"
 DIVIDER = {"type": "text", "markdown": "---", "indentationLevel": 0}
 
 
+# Gateway statuses worth replaying: the request never reached the app, so repeating a
+# non-idempotent POST cannot duplicate a block. 500 is deliberately EXCLUDED — the app saw
+# that one and may have partially applied it, so replaying is how you end up with two.
+_RETRY_STATUS = {429, 502, 503, 504}
+_REQ_ATTEMPTS = 4
+_REQ_BACKOFF_S = 2.0
+
+
 class CraftError(Exception):
-    pass
+    status: int | None = None  # HTTP status when the failure came back as one
 
 
 def _load_env_file() -> None:
@@ -75,13 +84,25 @@ def req(method: str, path_or_url: str, cred: str, *, json_body=None):
         data = json.dumps(json_body).encode()
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
-    try:
-        with urllib.request.urlopen(request, timeout=30) as r:
-            body = r.read().decode("utf-8")
-            return json.loads(body) if body.strip() else {}
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", "replace")[:200]
-        raise CraftError(f"{method} {url.split('?')[0]} -> {e.code}: {detail}")
+    # Craft's edge returns transient 502/503/504 (hit 2026-07-30). Retry gateway-level
+    # failures and network errors only — see _RETRY_STATUS for why 500 is not among them.
+    last: CraftError | None = None
+    for attempt in range(1, _REQ_ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as r:
+                body = r.read().decode("utf-8")
+                return json.loads(body) if body.strip() else {}
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:200]
+            last = CraftError(f"{method} {url.split('?')[0]} -> {e.code}: {detail}")
+            last.status = e.code
+            if e.code not in _RETRY_STATUS:
+                raise last
+        except (urllib.error.URLError, TimeoutError) as e:
+            last = CraftError(f"{method} {url.split('?')[0]} -> network error: {e}")
+        if attempt < _REQ_ATTEMPTS:
+            time.sleep(_REQ_BACKOFF_S * (2 ** (attempt - 1)))
+    raise last
 
 
 def needs_separator(base: str, cred: str, date: str) -> bool:
