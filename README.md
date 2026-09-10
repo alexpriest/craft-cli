@@ -1,8 +1,14 @@
-# craft-cli
+# craft
 
-`craft` — a thin, token-frugal CLI over the **Craft Docs REST API**. The default way
-any shell session (Claude Code, scripts) reads or mutates Craft. Compact output by
-default; `--json` for raw.
+A token-frugal command-line client for the Craft Docs API, built for shell sessions rather than people.
+
+## Status
+
+Shipped — the default way shell sessions read and write Craft.
+
+## License
+
+Not licensed for reuse.
 
 This is **separate from `craft-mirror`** on purpose: the mirror is a one-way
 Craft→Obsidian sync job (launchd), this is a general read/write client. They share
