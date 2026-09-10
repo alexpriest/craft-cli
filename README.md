@@ -113,6 +113,20 @@ readability win over prose. Full token reference: the `info.description` of `$BA
 grid. Any reader that only looks at `markdown` drops tables silently; `_table_to_md` in the CLI
 re-renders them as GFM.
 
+🚨 **Craft's table cells DO NOT KEEP LINKS. `[text](https://…)` inside a `| cell |` loses the URL
+and lands as plain text.** Links in prose, bullets and headings survive normally — this is
+specific to table cells. Verified 2026-08-09 on a research doc: two docs built as comparison
+tables with a link per row came back with **5 of ~30 and 3 of ~18 URLs** intact — the only
+survivors were the handful written outside tables. Nothing errors and the table still looks
+right, so this is silent and easy to ship.
+
+**The rule: never let a table cell be the only place a URL exists.** A comparison table is still
+the right shape for options × attributes — just pair it with a plain link list (`- Name ($price,
+stock) — https://…`) covering every row. Put the bare URL in the list, not another
+`[markdown](link)`, so a future reader can see at a glance that it's really there. Same applies
+to any `craft new`/`append` payload built from research output, which is exactly where
+link-per-row tables get generated.
+
 **Tags:** the API has no tag primitive, but Craft's app renders a literal `#name` in block
 markdown as a live, tappable tag (verified 2026-07-24 — `#macbook`, `#MacBook`, `#macbook-pro`
 all work; `tag://`, `##name`, `#[name]`, `<tag>` do NOT). `craft tag` just appends `#name` text.
