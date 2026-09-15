@@ -64,7 +64,7 @@ def creds() -> tuple[str, str]:
         if os.environ.get(key):
             out.append(os.environ[key].strip())
             continue
-        args = ["op", "item", "get", "Craft API", "--vault", "Claude", "--fields", f"label={field}"]
+        args = ["op", "item", "get", "Craft API", "--vault", "Agents", "--fields", f"label={field}"]
         if field == "credential":
             args.append("--reveal")
         out.append(subprocess.run(args, capture_output=True, text=True,

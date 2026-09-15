@@ -141,7 +141,7 @@ in Craft collects them in one place.
 
 ## Creds & security
 
-`op://Claude/Craft API/{base_url,credential}`. The **base_url is itself a secret**
+`op://Agents/Craft API/{base_url,credential}`. The **base_url is itself a secret**
 (embeds the link id) — the CLI resolves it internally so it never lands on a command
 line. `craftapi.creds()` reads `.env` first, then falls back to `op`.
 

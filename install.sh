@@ -21,8 +21,8 @@ have_creds() { grep -qE '^(export )?CRAFT_BASE_URL=.+' "$ENV_FILE" 2>/dev/null \
 if have_creds; then
   echo "==> .env already has creds"
 elif command -v op >/dev/null 2>&1 && \
-     BASE="$(op read 'op://Claude/Craft API/base_url' 2>/dev/null)" && \
-     CRED="$(op read 'op://Claude/Craft API/credential' 2>/dev/null)" && \
+     BASE="$(op read 'op://Agents/Craft API/base_url' 2>/dev/null)" && \
+     CRED="$(op read 'op://Agents/Craft API/credential' 2>/dev/null)" && \
      [[ -n "$BASE" && -n "$CRED" ]]; then
   echo "==> writing creds to .env from 1Password"
   { echo "CRAFT_BASE_URL=$BASE"; echo "CRAFT_CREDENTIAL=$CRED"; } > "$ENV_FILE"
@@ -30,7 +30,7 @@ elif command -v op >/dev/null 2>&1 && \
 else
   echo "!! could not read creds from 1Password. Either sign in to \`op\` and re-run,"
   echo "   or create $ENV_FILE with CRAFT_BASE_URL= and CRAFT_CREDENTIAL= by hand"
-  echo "   (values: op://Claude/Craft API/{base_url,credential})."
+  echo "   (values: op://Agents/Craft API/{base_url,credential})."
 fi
 
 echo "==> smoke test"

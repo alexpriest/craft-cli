@@ -57,7 +57,7 @@ craft-mirror is the one-way Craft→Obsidian launchd sync job):
 | `KIT-DAEMON-INTEGRATION.md` | this doc |
 
 **State:** `~/.local/state/craft-kit-watch/seen.json` — JSON list of block IDs already dispatched.
-**Creds:** 1Password item `Craft API` (vault Claude) → `op://Claude/Craft API/{base_url,credential}`.
+**Creds:** 1Password item `Craft API` (vault Agents) → `op://Agents/Craft API/{base_url,credential}`.
 The `base_url` embeds a secret link ID — treat the whole URL as a token, never on a command line.
 
 ### Worker behavior (encoded in `kit-watch.py::worker_prompt`)
