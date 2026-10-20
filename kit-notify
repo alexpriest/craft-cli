@@ -13,6 +13,10 @@ the old number, or silently stops getting a whole class of notification.
   transport: "imsg"    → kit-imsg-send, which reaches Kit's iMessage identity
                          (kit@alexpriest.com, uid 502) through the bridge socket
   transport: "blooio"  → the legacy SaaS path (default when the key is absent)
+
+If the iMessage path fails (after a Mini reboot the kit account has no GUI
+session, so the bridge socket is gone), the alert goes to Alex by email from
+kit@ instead. Only when both fail does this exit non-zero.
 """
 
 from __future__ import annotations
@@ -26,6 +30,8 @@ from pathlib import Path
 
 KIT_CONFIG = Path.home() / ".config" / "kit-imessage" / "config.json"
 KIT_IMSG_SEND = Path.home() / "Code" / "system" / "imessage" / "bin" / "kit-imsg-send"
+EMAIL_PYTHON = Path.home() / "Code" / "mcps" / "claude-email" / ".venv" / "bin" / "python"
+EMAIL_ALERT = Path.home() / "Code" / "mcps" / "claude-email" / "send_alert.py"
 # Blooio sits behind Cloudflare, which 403s (error 1010) on urllib's default User-Agent.
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -56,12 +62,25 @@ def _send_imsg(text: str) -> None:
         )
 
 
+def _send_email(text: str, reason: str) -> None:
+    body = f"{text}\n\n(Sent by email because the text failed: {reason[:300]})"
+    result = subprocess.run(
+        [str(EMAIL_PYTHON), str(EMAIL_ALERT), "--subject", f"Kit alert: {text[:60]}"],
+        input=body, capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"email fallback exited {result.returncode}: {result.stderr.strip()[-300:]}")
+
+
 def send(text: str) -> None:
     cfg = json.loads(KIT_CONFIG.read_text())
-    if cfg.get("transport") == "imsg":
-        _send_imsg(text)
-    else:
-        _send_blooio(cfg, text)
+    try:
+        if cfg.get("transport") == "imsg":
+            _send_imsg(text)
+        else:
+            _send_blooio(cfg, text)
+    except Exception as exc:  # noqa: BLE001 — any text failure falls through to email
+        _send_email(text, str(exc))
 
 
 def main(argv) -> int:
